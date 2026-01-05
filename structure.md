@@ -1,25 +1,12 @@
-
-  - src
-    - bot
-      - index.ts
-      - commands
-      - middlewares
-    - services
-      - wallet.service.ts
-      - aave.service.ts
-      - moonpay.service.ts
-      - transak.service.ts
-      - gasless.service.ts
-    - db
-      - models
-      - index.ts
-    - config
-      - env.ts
-      - constants.ts
-    - utils
-      - logger.ts
-      - error.ts
-    - app.ts
-  - package.json
-  - .env.example
-  - README.md
+tx_batch_system/
+├── Cargo.toml
+└── src/
+    ├── lib.rs
+    ├── types.rs
+    ├── journal.rs
+    ├── queue.rs
+    ├── execution.rs
+    ├── batch.rs
+    ├── persistence.rs
+    ├── verification.rs
+    └── query.rs

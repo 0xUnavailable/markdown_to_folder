@@ -52,9 +52,11 @@ func main() {
 
 func parseTreeFormat(file *os.File) {
 	scanner := bufio.NewScanner(file)
+	var rootDir string
+	// currentPath will store the directory stack
 	currentPath := []string{}
-	rootDir := ""
-	previousDepth := -1
+	// track the depth of each level to know when to pop from the stack
+	depths := []int{}
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -62,56 +64,52 @@ func parseTreeFormat(file *os.File) {
 			continue
 		}
 
-		// Root directory
+		// 1. Identify the root directory (first line)
 		if rootDir == "" {
-			rootDir = strings.TrimSpace(strings.TrimSuffix(line, "/"))
+			rootDir = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "./"), "/"))
 			os.MkdirAll(rootDir, 0755)
-			fmt.Printf("Created directory: %s\n", rootDir)
+			fmt.Printf("Created root: %s\n", rootDir)
 			continue
 		}
 
-		// Determine depth
-		depth := 0
-		found := false
-		for i, r := range line {
-			if !strings.ContainsRune("│├└─-+ |", r) && !unicode.IsSpace(r) {
-				depth = i / 4
-				found = true
-				break
-			}
-		}
-		if !found {
+		// 2. Determine visual depth by finding the first alphanumeric character
+		contentIndex := strings.IndexFunc(line, func(r rune) bool {
+			return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '.'
+		})
+		
+		if contentIndex == -1 {
 			continue
 		}
 
-		// --- CRITICAL FIX ---
-		// 1. Strip tree prefix
-		stripped := treePrefixRegex.ReplaceAllString(line, "")
-		stripped = strings.TrimSpace(stripped)
+		// 3. Clean the name
+		name := strings.TrimSpace(line[contentIndex:])
+		name = strings.TrimSuffix(name, "/")
 
-		// 2. Extract filename
-		match := nameExtractionRegex.FindStringSubmatch(stripped)
-		if len(match) < 2 {
-			continue
+		// 4. Backtrack the stack: If current depth is <= previous depth, 
+		// pop until we are at the parent level
+		for len(depths) > 0 && contentIndex <= depths[len(depths)-1] {
+			depths = depths[:len(depths)-1]
+			currentPath = currentPath[:len(currentPath)-1]
 		}
-		name := match[1]
 
-		// Manage nesting
-		if depth <= previousDepth {
-			backtrack := previousDepth - depth + 1
-			if backtrack > len(currentPath) {
-				backtrack = len(currentPath)
-			}
-			currentPath = currentPath[:len(currentPath)-backtrack]
+		// 5. Build full path
+		fullPath := filepath.Join(rootDir, filepath.Join(currentPath...), name)
+
+		// 6. Create file or directory
+		if strings.Contains(name, ".") {
+			// It's a file
+			os.MkdirAll(filepath.Dir(fullPath), 0755)
+			f, _ := os.Create(fullPath)
+			f.Close()
+			fmt.Printf("Created file: %s\n", fullPath)
+		} else {
+			// It's a directory
+			os.MkdirAll(fullPath, 0755)
+			fmt.Printf("Created folder: %s\n", fullPath)
+			// Add to stack for children
+			currentPath = append(currentPath, name)
+			depths = append(depths, contentIndex)
 		}
-		previousDepth = depth
-
-		// Build path
-		pathParts := append([]string{rootDir}, currentPath...)
-		pathParts = append(pathParts, name)
-		fullPath := filepath.Join(pathParts...)
-
-		createFileOrDirectory(fullPath, name, &currentPath)
 	}
 }
 
