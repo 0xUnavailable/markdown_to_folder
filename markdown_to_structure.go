@@ -6,121 +6,179 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"unicode"
 )
 
+type InputFormat string
+
+const (
+	FormatLayered InputFormat = "layered"
+	FormatTree    InputFormat = "tree"
+)
+
+// Removes all tree-drawing characters and leading whitespace
+var treePrefixRegex = regexp.MustCompile(`^[\s│├└─\-\+\|]+`)
+
+// Extract filename starting at first '_' OR first valid filename character
+// Supports:
+//   _file.py
+//   text.py
+//   README.md
+var nameExtractionRegex = regexp.MustCompile(`^([_A-Za-z0-9][A-Za-z0-9._-]*)$`)
+
 func main() {
-	// Define command-line flag for markdown file path
-	inputFile := flag.String("input", "structure.md", "Path to the markdown file containing the repository structure")
+	inputFile := flag.String("input", "structure.md", "Path to the markdown file")
+	formatType := flag.String("format", "tree", "Input format: 'layered' or 'tree'")
 	flag.Parse()
 
-	// Open the markdown file
+	format := InputFormat(*formatType)
 	file, err := os.Open(*inputFile)
 	if err != nil {
-		fmt.Printf("Error opening markdown file: %v\n", err)
+		fmt.Printf("Error opening file: %v\n", err)
 		os.Exit(1)
 	}
 	defer file.Close()
 
+	if format == FormatLayered {
+		parseLayeredFormat(file)
+	} else {
+		parseTreeFormat(file)
+	}
+
+	fmt.Println("\nRepository structure created successfully!")
+}
+
+func parseTreeFormat(file *os.File) {
 	scanner := bufio.NewScanner(file)
-	currentPath := make([]string, 0)
+	currentPath := []string{}
+	rootDir := ""
+	previousDepth := -1
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		// Root directory
+		if rootDir == "" {
+			rootDir = strings.TrimSpace(strings.TrimSuffix(line, "/"))
+			os.MkdirAll(rootDir, 0755)
+			fmt.Printf("Created directory: %s\n", rootDir)
+			continue
+		}
+
+		// Determine depth
+		depth := 0
+		found := false
+		for i, r := range line {
+			if !strings.ContainsRune("│├└─-+ |", r) && !unicode.IsSpace(r) {
+				depth = i / 4
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+
+		// --- CRITICAL FIX ---
+		// 1. Strip tree prefix
+		stripped := treePrefixRegex.ReplaceAllString(line, "")
+		stripped = strings.TrimSpace(stripped)
+
+		// 2. Extract filename
+		match := nameExtractionRegex.FindStringSubmatch(stripped)
+		if len(match) < 2 {
+			continue
+		}
+		name := match[1]
+
+		// Manage nesting
+		if depth <= previousDepth {
+			backtrack := previousDepth - depth + 1
+			if backtrack > len(currentPath) {
+				backtrack = len(currentPath)
+			}
+			currentPath = currentPath[:len(currentPath)-backtrack]
+		}
+		previousDepth = depth
+
+		// Build path
+		pathParts := append([]string{rootDir}, currentPath...)
+		pathParts = append(pathParts, name)
+		fullPath := filepath.Join(pathParts...)
+
+		createFileOrDirectory(fullPath, name, &currentPath)
+	}
+}
+
+func parseLayeredFormat(file *os.File) {
+	scanner := bufio.NewScanner(file)
+	currentPath := []string{}
 	rootDir := ""
 
 	for scanner.Scan() {
 		originalLine := scanner.Text()
 		line := strings.TrimSpace(originalLine)
-
 		if line == "" {
 			continue
 		}
 
-		// Calculate indentation level from original line (count leading spaces)
-		indentLevel := 0
-		for _, char := range originalLine {
-			if char == ' ' {
-				indentLevel++
+		indent := 0
+		for _, r := range originalLine {
+			if r == ' ' {
+				indent++
 			} else {
 				break
 			}
 		}
 
-		// Parse the line (expecting markdown list item starting with - or *)
 		var name string
-		if strings.HasPrefix(line, "- ") {
+		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
 			name = strings.TrimSpace(line[2:])
-		} else if strings.HasPrefix(line, "* ") {
-			name = strings.TrimSpace(line[2:])
-		} else if indentLevel == 0 {
-			name = line // Root directory
+		} else if indent == 0 {
+			name = line
 		} else {
-			continue // Skip lines that don't match expected format
-		}
-
-		// Handle root directory (first item with indent 0)
-		if rootDir == "" && indentLevel == 0 {
-			rootDir = name
-			err = os.MkdirAll(rootDir, 0755)
-			if err != nil {
-				fmt.Printf("Error creating root directory %s: %v\n", rootDir, err)
-				os.Exit(1)
-			}
 			continue
 		}
 
-		// Calculate target level (each 2 spaces = 1 level)
-		targetLevel := indentLevel / 2
-
-		// Adjust current path based on indentation level
-		// We need to be at targetLevel - 1 (since we're about to add this item)
-		if targetLevel > 0 {
-			targetLevel-- // Adjust because currentPath represents parent directories
+		if rootDir == "" && indent == 0 {
+			rootDir = name
+			os.MkdirAll(rootDir, 0755)
+			fmt.Printf("Created directory: %s\n", rootDir)
+			continue
 		}
 
-		// Trim currentPath to match the target level
-		if len(currentPath) > targetLevel {
-			currentPath = currentPath[:targetLevel]
+		level := indent / 2
+		if level > 0 {
+			level--
 		}
 
-		// Construct the full path
+		if len(currentPath) > level {
+			currentPath = currentPath[:level]
+		}
+
 		pathParts := append([]string{rootDir}, currentPath...)
 		pathParts = append(pathParts, name)
 		fullPath := filepath.Join(pathParts...)
 
-		// Check if it's a file (contains an extension) or directory
-		if strings.Contains(name, ".") {
-			// Create parent directory if it doesn't exist
-			parentDir := filepath.Dir(fullPath)
-			err := os.MkdirAll(parentDir, 0755)
-			if err != nil {
-				fmt.Printf("Error creating parent directory %s: %v\n", parentDir, err)
-				continue
-			}
-
-			// Create file
-			f, err := os.Create(fullPath)
-			if err != nil {
-				fmt.Printf("Error creating file %s: %v\n", fullPath, err)
-				continue
-			}
-			f.Close()
-			fmt.Printf("Created file: %s\n", fullPath)
-		} else {
-			// Create directory
-			err := os.MkdirAll(fullPath, 0755)
-			if err != nil {
-				fmt.Printf("Error creating directory %s: %v\n", fullPath, err)
-				continue
-			}
-			fmt.Printf("Created directory: %s\n", fullPath)
-			
-			// Add to current path for nested items
-			currentPath = append(currentPath, name)
-		}
+		createFileOrDirectory(fullPath, name, &currentPath)
 	}
+}
 
-	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading file: %v\n", err)
+func createFileOrDirectory(fullPath, name string, currentPath *[]string) {
+	if strings.Contains(name, ".") {
+		parent := filepath.Dir(fullPath)
+		os.MkdirAll(parent, 0755)
+		f, _ := os.Create(fullPath)
+		f.Close()
+		fmt.Printf("Created file: %s\n", name)
+	} else {
+		os.MkdirAll(fullPath, 0755)
+		fmt.Printf("Created directory: %s\n", name)
+		*currentPath = append(*currentPath, name)
 	}
-
-	fmt.Println("\nRepository structure created successfully!")
 }

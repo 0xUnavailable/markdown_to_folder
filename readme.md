@@ -1,81 +1,179 @@
+Below is a **fixed and up-to-date README** that accurately reflects the **current behavior of the tool**, including:
+
+* **Both supported input formats** (`layered` markdown lists **and** `tree` / `tree-like` output)
+* The **two-phase tree parsing fix** (tree prefix stripping + filename extraction)
+* Correct rules for filenames with `_` and normal names (`text.py`)
+* No misleading claims about “nested markdown lists only”
+
+You can **replace your README entirely with this**.
+
+---
+
 # Markdown to Repository Structure Tool
 
-This is a Go command-line tool that creates a directory structure and files based on a markdown file specifying the repository layout. It parses a nested markdown list to generate folders (items without extensions) and empty files (items with extensions).
+This is a Go command-line tool that creates a directory structure and empty files from a textual description of a repository layout.
+
+It supports **two input formats**:
+
+1. **Layered Markdown lists** (indentation-based)
+2. **Tree-style layouts** (e.g. `tree` command output using `├──`, `└──`, `│`)
+
+The tool deterministically converts these formats into real directories and files on disk.
+
+---
 
 ## Features
 
-- Reads a markdown file with a nested list format to define the repository structure
-- Creates directories and empty files according to the specified hierarchy
-- Supports custom input markdown files via a command-line flag
-- Handles errors gracefully, continuing processing even if some operations fail
-- Provides detailed output showing which files and directories are created
+* Supports **layered markdown lists** (`-` / `*` with indentation)
+* Supports **tree-style structures** (`├──`, `└──`, `│`)
+* Correctly strips tree-drawing characters before file creation
+* Handles files that:
+
+  * start with `_` (e.g. `__init__.py`)
+  * do **not** start with `_` (e.g. `main.go`, `text.py`)
+* Creates:
+
+  * **directories** for names without dots
+  * **files** for names containing dots
+* Continues processing even if individual operations fail
+* Prints all created files and directories
+
+---
 
 ## Prerequisites
 
-- Go (version 1.16 or higher recommended) installed on your system
+* Go **1.16+**
+
+No external dependencies — standard library only.
+
+---
 
 ## Installation
 
-1. Save the Go program as `markdown_to_structure.go`
-2. Ensure you have Go installed and configured
-3. No additional dependencies are required, as the tool uses the Go standard library
+1. Save the program as:
+
+```text
+markdown_to_structure.go
+```
+
+2. Ensure Go is installed:
+
+```bash
+go version
+```
+
+---
 
 ## Usage
 
 ### Basic Usage
 
-1. Create a markdown file (e.g., `structure.md`) that defines the repository structure
-2. Run the tool using the following command:
-
 ```bash
 go run markdown_to_structure.go -input structure.md
 ```
 
-3. The tool will create the directory structure and files in the current working directory
+By default, the tool assumes **tree format**.
+
+---
 
 ### Command-Line Flags
 
-- `-input`: Path to the markdown file containing the repository structure (default: `structure.md`)
+| Flag      | Description                                         |
+| --------- | --------------------------------------------------- |
+| `-input`  | Path to input file (default: `structure.md`)        |
+| `-format` | Input format: `tree` or `layered` (default: `tree`) |
+
+#### Examples
 
 ```bash
-# Use default structure.md file
-go run markdown_to_structure.go
+# Tree format (default)
+go run markdown_to_structure.go -input structure.md
 
-# Use custom markdown file
-go run markdown_to_structure.go -input my_structure.md
+# Explicit tree format
+go run markdown_to_structure.go -input structure.md -format tree
+
+# Layered markdown format
+go run markdown_to_structure.go -input structure.md -format layered
 ```
 
-## Markdown File Format
+---
 
-### Important Rules
+## Supported Input Formats
 
-The markdown file **must** follow these specific rules for the tool to work correctly:
+---
 
-#### 1. Root Directory
-- The **first non-empty line** specifies the root directory name
-- This line should **not** have any leading spaces or list markers (`-` or `*`)
-- Example: `my_project`
+## 1️⃣ Tree Format (Recommended)
 
-#### 2. List Items
-- Use `-` (dash) or `*` (asterisk) followed by a **single space** to denote list items
-- Format: `- item_name` or `* item_name`
+This format matches the output of the Unix `tree` command.
 
-#### 3. Indentation (CRITICAL)
-- **Use exactly 2 spaces per indentation level**
-- **Do NOT use tabs** - only spaces are supported
-- Each nested level must be indented exactly 2 more spaces than its parent
-- Inconsistent indentation will cause files/folders to be created in the wrong location
+### Rules
 
-#### 4. Files vs Directories
-- **Files**: Items containing a dot/period (`.`) in the name (e.g., `index.ts`, `package.json`, `.env.example`)
-- **Directories**: Items without a dot/period in the name (e.g., `src`, `components`, `utils`)
+* First non-empty line = **root directory**
+* Tree drawing characters are allowed:
 
-### Example Markdown Structure
+  * `├──`
+  * `└──`
+  * `│`
+* Tree characters are **automatically stripped**
+* Filenames are extracted safely and deterministically
 
-Here's a properly formatted `structure.md` file:
+### Example Input
+
+```text
+tx_batch_system/
+├── __init__.py
+├── types.py
+├── journal.py
+├── queue.py
+├── execution.py
+├── batch.py
+├── persistence.py
+├── verification.py
+└── query.py
+```
+
+### Output
+
+```text
+tx_batch_system/
+├── __init__.py
+├── types.py
+├── journal.py
+├── queue.py
+├── execution.py
+├── batch.py
+├── persistence.py
+├── verification.py
+└── query.py
+```
+
+✔ Tree characters never appear in filenames
+✔ Works for `_files` and normal filenames
+✔ Depth is preserved
+
+---
+
+## 2️⃣ Layered Markdown Format
+
+### Rules (STRICT)
+
+* First non-empty line = **root directory**
+* Use `- ` or `* ` for list items
+* **Exactly 2 spaces per indentation level**
+* **Spaces only** — tabs are not supported
+
+### Files vs Directories
+
+* **Files** → names containing `.`
+  (`main.go`, `.env`, `README.md`)
+* **Directories** → names without `.`
+  (`src`, `utils`, `internal`)
+
+---
+
+### Example Input
 
 ```markdown
-my_project
   - src
     - bot
       - index.ts
@@ -102,167 +200,87 @@ my_project
   - README.md
 ```
 
-### Indentation Breakdown
+---
 
-Let's analyze the indentation in the example above:
+## Common Issues & Fixes
 
-```
-my_project          ← No indentation (0 spaces) - Root directory
-  - src             ← 2 spaces - Level 1 (inside my_project)
-    - bot           ← 4 spaces - Level 2 (inside src)
-      - index.ts    ← 6 spaces - Level 3 (inside bot)
-      - commands    ← 6 spaces - Level 3 (inside bot)
-    - services      ← 4 spaces - Level 2 (inside src)
-      - wallet.service.ts  ← 6 spaces - Level 3 (inside services)
-```
+---
 
-### Output Structure
+### Tree characters appear in filenames
 
-Running the tool with the example above will create:
+**Cause**: Old versions did not strip tree prefixes.
 
-```
-my_project/
-├── src/
-│   ├── bot/
-│   │   ├── index.ts
-│   │   ├── commands/
-│   │   └── middlewares/
-│   ├── services/
-│   │   ├── wallet.service.ts
-│   │   ├── aave.service.ts
-│   │   ├── moonpay.service.ts
-│   │   ├── transak.service.ts
-│   │   └── gasless.service.ts
-│   ├── db/
-│   │   ├── models/
-│   │   └── index.ts
-│   ├── config/
-│   │   ├── env.ts
-│   │   └── constants.ts
-│   ├── utils/
-│   │   ├── logger.ts
-│   │   └── error.ts
-│   └── app.ts
-├── package.json
-├── .env.example
-└── README.md
-```
+**Fix**:
+Use the updated version — tree prefixes are now stripped **before** filename parsing.
 
-## Common Issues and Troubleshooting
+---
 
-### Files Created in Wrong Directory
+### Files created at wrong depth (layered format)
 
-**Problem**: Files appear in the wrong folder or at the wrong nesting level.
+**Cause**: Incorrect indentation.
 
-**Solution**: Check your indentation carefully. Each level must be exactly 2 spaces more than its parent.
+**Fix**:
+Indentation must be **exactly 2 spaces per level**.
 
 ```markdown
-# ❌ WRONG - Inconsistent spacing
-my_project
-  - src
-   - file.ts          ← 3 spaces (should be 4)
-     - another.ts     ← 5 spaces (should be 6)
+# WRONG
+   - file.ts   # 3 spaces
 
-# ✅ CORRECT - Consistent 2-space indentation
-my_project
-  - src
-    - file.ts         ← 4 spaces
-      - nested
-        - another.ts  ← 8 spaces
+# CORRECT
+    - file.ts  # 4 spaces
 ```
 
-### Mixed Tabs and Spaces
+---
 
-**Problem**: Tool doesn't recognize the structure properly.
+### Files created in current directory instead of root
 
-**Solution**: Ensure you're using only spaces, not tabs. Configure your text editor to insert spaces when you press Tab.
+**Cause**: Missing root directory line.
 
-### Missing Root Directory
+**Fix**:
+Ensure the first line is a directory name with **no indentation or markers**.
 
-**Problem**: Tool creates files in the current directory instead of a new folder.
+---
 
-**Solution**: Ensure the first line is the root directory name with no indentation or list markers.
+## Design Notes (Important)
 
-## Advanced Examples
+* Tree parsing is **two-phase**:
 
-### Web Application Structure
+  1. Strip tree-drawing characters
+  2. Extract the filename
+* This prevents Unicode tree symbols from leaking into filenames
+* Filename grammar supports:
 
-```markdown
-webapp
-  - public
-    - index.html
-    - favicon.ico
-  - src
-    - components
-      - Header.jsx
-      - Footer.jsx
-    - pages
-      - Home.jsx
-      - About.jsx
-    - styles
-      - main.css
-    - App.jsx
-    - index.js
-  - package.json
-  - .gitignore
-```
+  * `_file.py`
+  * `text.py`
+  * `README.md`
+  * `.env`
 
-### Go Project Structure
-
-```markdown
-go-api
-  - cmd
-    - api
-      - main.go
-  - internal
-    - handlers
-      - user.go
-      - auth.go
-    - models
-      - user.go
-    - database
-      - db.go
-  - pkg
-    - utils
-      - validator.go
-  - go.mod
-  - go.sum
-  - README.md
-```
-
-## Tips for Creating Your Structure File
-
-1. **Plan your structure first**: Sketch out your directory hierarchy before writing the markdown
-2. **Use a code editor**: Use editors like VS Code, Sublime Text, or Vim that show space/tab characters
-3. **Enable visible whitespace**: Turn on "Show Whitespace" in your editor to see indentation clearly
-4. **Be consistent**: Stick to 2 spaces per level throughout the entire file
-5. **Test incrementally**: Start with a small structure to verify it works, then expand
-6. **Validate indentation**: Count spaces carefully for each level (2, 4, 6, 8, etc.)
-
-## Notes
-
-- The tool creates empty files; you need to populate them with content manually
-- Indentation **must** be consistent (exactly 2 spaces per level)
-- Errors during file or directory creation are logged, but the tool continues processing
-- Hidden files (starting with `.`) are supported (e.g., `.env`, `.gitignore`)
+---
 
 ## Limitations
 
-- The tool does not populate files with content
-- Only supports markdown lists with `-` or `*` prefixes
-- Requires exactly 2 spaces per indentation level
-- Does not support mixing tabs and spaces
-- Cannot parse other markdown formats (code blocks, headers, etc.)
+* Files are created **empty**
+* No content templating
+* No validation of markdown correctness
+* Layered format requires strict spacing
+* Does not parse markdown headers or code blocks
 
-## Contributing
+---
 
-Feel free to submit issues or pull requests to improve the tool. Suggestions for features like:
-- Adding default file content templates
-- Supporting other markdown formats
-- Auto-detecting indentation style
-- Validating markdown structure before processing
+## Tips
+
+* Prefer **tree format** if possible — it is more robust
+* Generate input using:
+
+  ```bash
+  tree > structure.md
+  ```
+* Enable “show whitespace” in your editor when using layered format
+* Start small, then expand
+
+---
 
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License
