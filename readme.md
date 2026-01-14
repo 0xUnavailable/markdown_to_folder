@@ -1,13 +1,3 @@
-Below is a **fixed and up-to-date README** that accurately reflects the **current behavior of the tool**, including:
-
-* **Both supported input formats** (`layered` markdown lists **and** `tree` / `tree-like` output)
-* The **two-phase tree parsing fix** (tree prefix stripping + filename extraction)
-* Correct rules for filenames with `_` and normal names (`text.py`)
-* No misleading claims about “nested markdown lists only”
-
-You can **replace your README entirely with this**.
-
----
 
 # Markdown to Repository Structure Tool
 
